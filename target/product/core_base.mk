@@ -20,6 +20,9 @@ PRODUCT_PROPERTY_OVERRIDES := \
     ro.config.notification_sound=Chime.ogg \
     ro.config.alarm_alert=Flow.ogg
 
+PRODUCT_PROPERTY_OVERRIDES := \
+    ro.substratum.verified=true
+
 PRODUCT_PACKAGES += \
     ContactsProvider \
     DefaultContainerService \
