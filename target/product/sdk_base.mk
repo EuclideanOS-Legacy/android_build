@@ -21,7 +21,6 @@ PRODUCT_PACKAGES := \
 	CubeLiveWallpapers \
 	CustomLocale \
 	Development \
-	Dialer \
 	EmulatorSmokeTests \
 	Fallback \
 	Gallery \
@@ -29,7 +28,6 @@ PRODUCT_PACKAGES := \
 	LegacyCamera \
 	librs_jni \
 	LiveWallpapersPicker \
-	Mms \
 	rild \
 	SdkSetup \
 	SmokeTest \
