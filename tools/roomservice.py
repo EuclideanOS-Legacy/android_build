@@ -20,6 +20,8 @@ from __future__ import print_function
 import json
 import sys
 import os
+import os.path
+import re
 from xml.etree import ElementTree as ES
 # Use the urllib importer from the Cyanogenmod roomservice
 try:
@@ -34,17 +36,16 @@ except ImportError:
 
 # Config
 # set this to the default remote to use in repo
-default_rem = "github"
+default_rem = "devices"
 # set this to the default revision to use (branch/tag name)
-default_rev = "android-4.3"
+default_rev = "nougat-mr1"
 # set this to the remote that you use for projects from your team repos
 # example fetch="https://github.com/omnirom"
-default_team_rem = "omnirom"
+default_team_rem = "devices"
 # this shouldn't change unless google makes changes
 local_manifest_dir = ".repo/local_manifests"
 # change this to your name on github (or equivalent hosting)
-android_team = "omnirom"
-
+android_team = "EuclideanOS-Devices"
 
 def check_repo_exists(git_data):
     if not int(git_data.get('total_count', 0)):
@@ -55,19 +56,20 @@ def check_repo_exists(git_data):
 # Note that this can only be done 5 times per minute
 def search_github_for_device(device):
     git_search_url = "https://api.github.com/search/repositories" \
-                     "?q=%40{}+android_device+{}".format(android_team, device)
+                     "?q=%40{}+android_device+{}+fork:true".format(android_team, device)
     git_req = urllib.request.Request(git_search_url)
-    # this api is a preview at the moment. accept the custom media type
-    git_req.add_header('Accept', 'application/vnd.github.preview')
     try:
         response = urllib.request.urlopen(git_req)
-    except urllib.request.HTTPError:
-        raise Exception("There was an issue connecting to github."
+    except urllib.request.HTTPError as e:
+        print("There was an issue connecting to github."
                         " Please try again in a minute")
-    git_data = json.load(response)
-    check_repo_exists(git_data)
-    print("found the {} device repo".format(device))
-    return git_data
+    except urllib.request.URLError as e:
+        print("WARNING: No network connection available.")
+    else:
+        git_data = json.load(response)
+        check_repo_exists(git_data)
+        print("found the {} device repo".format(device))
+        return git_data
 
 
 def get_device_url(git_data):
@@ -90,10 +92,12 @@ def get_device_url(git_data):
                     "roomservice".format(device, android_team))
 
 
-def parse_device_directory(device_url):
+def parse_device_directory(device_url,device):
     to_strip = "android_device"
     repo_name = device_url[device_url.index(to_strip) + len(to_strip):]
+    repo_name = repo_name[:repo_name.index(device)]
     repo_dir = repo_name.replace("_", "/")
+    repo_dir = repo_dir + device
     return "device{}".format(repo_dir)
 
 
@@ -101,7 +105,8 @@ def parse_device_directory(device_url):
 def iterate_manifests():
     files = []
     for file in os.listdir(local_manifest_dir):
-        files.append(os.path.join(local_manifest_dir, file))
+        if file.endswith(".xml"):
+            files.append(os.path.join(local_manifest_dir, file))
     files.append('.repo/manifest.xml')
     for file in files:
         try:
@@ -114,12 +119,14 @@ def iterate_manifests():
                 yield project
 
 
-def check_project_exists(url):
+def check_project_exists(url, revision, path):
     for project in iterate_manifests():
-        if project.get("name") == url:
+        if project.get("name") == url and project.get("revision") == revision and project.get("path") == path:
             return True
     return False
 
+def check_target_exists(directory):
+    return os.path.isdir(directory)
 
 # Use the indent function from http://stackoverflow.com/a/4590052
 def indent(elem, level=0):
@@ -141,7 +148,7 @@ def indent(elem, level=0):
 def create_manifest_project(url, directory,
                             remote=default_rem,
                             revision=default_rev):
-    project_exists = check_project_exists(url)
+    project_exists = check_project_exists(url, revision, directory)
 
     if project_exists:
         return None
@@ -198,13 +205,13 @@ def parse_device_from_folder(device):
     elif len(search) == 1:
         location = search[0]
     else:
-        print("you device can't be found in device sources..")
+        print("Your device can't be found in device sources..")
         location = parse_device_from_manifest(device)
     return location
 
 
 def parse_dependency_file(location):
-    dep_file = "omni.dependencies"
+    dep_file = "eucos.dependencies"
     dep_location = '/'.join([location, dep_file])
     if not os.path.isfile(dep_location):
         print("WARNING: %s file not found" % dep_location)
@@ -216,6 +223,29 @@ def parse_dependency_file(location):
         raise Exception("ERROR: malformed dependency file")
     return dependencies
 
+# if there is any conflict with existing and new
+# delete the roomservice.xml file and create new
+def check_manifest_problems(dependencies):
+    for dependency in dependencies:
+        repository = dependency.get("repository")
+        target_path = dependency.get("target_path")
+        revision = dependency.get("revision", default_rev)
+        remote = dependency.get("remote", default_rem)
+
+        # check for existing projects
+        for project in iterate_manifests():
+            if project.get("revision") is not None and project.get("path") is not None:
+                if project.get("path") == target_path and project.get("revision") != revision:
+                    print("WARNING: detected conflict in revisions for repository ", repository)
+                    current_dependency = str(project.get(repository))
+                    file = ES.parse('/'.join([local_manifest_dir, "roomservice.xml"]))
+                    file_root = file.getroot()
+                    for current_project in file_root.findall('project'):
+                        new_dependency = str(current_project.find('revision'))
+                        if new_dependency == current_dependency:
+                            file_root.remove(current_project)
+                    file.write('/'.join([local_manifest_dir, "roomservice.xml"]))
+                    return
 
 def create_dependency_manifest(dependencies):
     projects = []
@@ -239,31 +269,70 @@ def create_dependency_manifest(dependencies):
             write_to_manifest(manifest)
             projects.append(target_path)
     if len(projects) > 0:
-        os.system("repo sync %s" % " ".join(projects))
+        os.system("repo sync --force-sync --no-clone-bundle %s" % " ".join(projects))
+
+
+def create_common_dependencies_manifest(dependencies):
+    dep_file = "eucos.dependencies"
+    common_list = []
+    if dependencies is not None:
+        for dependency in dependencies:
+            try:
+                index = common_list.index(dependency['target_path'])
+            except ValueError:
+                index = None
+            if index is None:
+                common_list.append(dependency['target_path'])
+                dep_location = '/'.join([dependency['target_path'], dep_file])
+                if not os.path.isfile(dep_location):
+                    sys.exit()
+                else:
+                    try:
+                        with open(dep_location, 'r') as f:
+                            common_deps = json.loads(f.read())
+                    except ValueError:
+                        raise Exception("ERROR: malformed dependency file")
+
+                    if common_deps is not None:
+                        print("Looking for dependencies on: ",
+                               dependency['target_path'])
+                        check_manifest_problems(common_deps)
+                        create_dependency_manifest(common_deps)
+                        create_common_dependencies_manifest(common_deps)
 
 
 def fetch_dependencies(device):
     location = parse_device_from_folder(device)
-    if not os.path.isdir(location):
+    if location is None or not os.path.isdir(location):
         raise Exception("ERROR: could not find your device "
                         "folder location, bailing out")
     dependencies = parse_dependency_file(location)
+    check_manifest_problems(dependencies)
     create_dependency_manifest(dependencies)
+    create_common_dependencies_manifest(dependencies)
+    fetch_device(device)
+
+def check_device_exists(device):
+    location = parse_device_from_folder(device)
+    if location is None:
+        return False
+    return os.path.isdir(location)
 
 
 def fetch_device(device):
+    if check_device_exists(device):
+        print("WARNING: Trying to fetch a device that's already there")
     git_data = search_github_for_device(device)
     device_url = get_device_url(git_data)
-    device_dir = parse_device_directory(device_url)
+    device_dir = parse_device_directory(device_url,device)
     project = create_manifest_project(device_url,
                                       device_dir,
                                       remote=default_team_rem)
     if not project is None:
-        manifest = append_to_manifest(project)
-        write_to_manifest(manifest)
-        print("syncing the device config")
-        os.system('repo sync %s' % device_dir)
-    fetch_dependencies(device)
+            manifest = append_to_manifest(project)
+            write_to_manifest(manifest)
+            print("syncing the device config")
+            os.system('repo sync --force-sync --no-clone-bundle %s' % device_dir)
 
 
 if __name__ == '__main__':
@@ -281,7 +350,6 @@ if __name__ == '__main__':
     else:
         deps_only = False
 
-    if deps_only:
-        fetch_dependencies(device)
-    else:
+    if not deps_only:
         fetch_device(device)
+fetch_dependencies(device)
