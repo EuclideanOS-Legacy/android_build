@@ -62,4 +62,7 @@ if [ -n "$BUILD_THUMBPRINT" ] ; then
 fi
 echo "ro.build.characteristics=$TARGET_AAPT_CHARACTERISTICS"
 
+# eucos properties
+echo "ro.eucos.device=$EUCOS_DEVICE"
+
 echo "# end build properties"
