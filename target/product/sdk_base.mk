@@ -21,13 +21,16 @@ PRODUCT_PACKAGES := \
 	CubeLiveWallpapers \
 	CustomLocale \
 	Development \
+	Dialer \
 	EmulatorSmokeTests \
 	Fallback \
 	Gallery \
 	GestureBuilder \
+	Launcher3 \
 	LegacyCamera \
 	librs_jni \
 	LiveWallpapersPicker \
+	Mms \
 	rild \
 	SdkSetup \
 	SmokeTest \

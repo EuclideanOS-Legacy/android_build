@@ -24,16 +24,24 @@ PRODUCT_PACKAGES += \
     BasicDreams \
     BlockedNumberProvider \
     BookmarkProvider \
+    Browser2 \
+    Calendar \
     CalendarProvider \
     CaptivePortalLogin \
     CertInstaller \
+    Contacts \
+    DeskClock \
     DocumentsUI \
     DownloadProviderUi \
+    Email \
+    ExactCalculator \
     ExternalStorageProvider \
     FusedLocation \
     InputDevices \
     KeyChain \
     Keyguard \
+    LatinIME \
+    Launcher2 \
     ManagedProvisioning \
     MtpDocumentsProvider \
     PacProcessor \
